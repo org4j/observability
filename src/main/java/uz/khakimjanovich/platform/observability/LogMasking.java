@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
@@ -15,7 +15,7 @@ import java.util.List;
 import org.springframework.boot.json.JsonWriter;
 import org.springframework.boot.logging.logback.ExtendedWhitespaceThrowableProxyConverter;
 import org.springframework.boot.logging.structured.StructuredLoggingJsonMembersCustomizer;
-import uz.heeypay.ecom.masking.Masking;
+import uz.khakimjanovich.platform.masking.Masking;
 
 /**
  * The guard on every log line, wherever it goes: the readable console, ECS JSON and OTLP all print

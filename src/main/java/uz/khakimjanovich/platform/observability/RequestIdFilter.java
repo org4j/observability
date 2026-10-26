@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import io.micrometer.tracing.Tracer;
 import jakarta.servlet.FilterChain;

@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
@@ -18,8 +18,8 @@ import org.springframework.boot.health.registry.HealthContributorRegistry;
 import org.springframework.boot.restclient.RestClientCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import uz.heeypay.ecom.masking.Masking;
-import uz.heeypay.ecom.masking.MaskingRules;
+import uz.khakimjanovich.platform.masking.Masking;
+import uz.khakimjanovich.platform.masking.MaskingRules;
 
 /**
  * Sends every log line over OTLP with its trace, beside the console (Spring Boot's own: readable

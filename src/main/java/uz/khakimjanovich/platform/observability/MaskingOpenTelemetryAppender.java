@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;

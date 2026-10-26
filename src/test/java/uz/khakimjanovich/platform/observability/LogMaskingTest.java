@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -63,7 +63,8 @@ class LogMaskingTest {
     logInAnApp();
     assertThat(output)
         .contains("card 410030******7891 declined, client_secret=***")
-        .contains("IllegalStateException", "at uz.heeypay.ecom.observability.LogMaskingTest")
+        .contains(
+            "IllegalStateException", "at uz.khakimjanovich.platform.observability.LogMaskingTest")
         .doesNotContain("4100301234567891", "t0p");
   }
 

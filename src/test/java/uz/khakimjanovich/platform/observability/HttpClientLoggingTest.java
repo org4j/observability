@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -11,7 +11,7 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
-import uz.heeypay.ecom.masking.Masking;
+import uz.khakimjanovich.platform.masking.Masking;
 
 /** Client calls are logged masked, and only small readable answers are buffered for the log. */
 @ExtendWith(OutputCaptureExtension.class)
