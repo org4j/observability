@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *
  * @param masking field names to mask beyond the defaults
  */
-@ConfigurationProperties("ecom.observability")
+@ConfigurationProperties("platform.observability")
 public record ObservabilityProperties(@DefaultValue Masking masking) {
 
   /**

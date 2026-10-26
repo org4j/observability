@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,10 +25,12 @@ class HealthMetricsTest {
     var meters = new SimpleMeterRegistry();
     new HealthMetrics(provider(registry), provider(meters)).afterSingletonsInstantiated();
 
-    assertThat(meters.get("ecom.health.up").tag("component", "store").gauge().value()).isEqualTo(1);
-    assertThat(meters.get("ecom.health.up").tag("component", "broken").gauge().value()).isZero();
+    assertThat(meters.get("platform.health.up").tag("component", "store").gauge().value())
+        .isEqualTo(1);
+    assertThat(meters.get("platform.health.up").tag("component", "broken").gauge().value())
+        .isZero();
     down[0] = true;
-    assertThat(meters.get("ecom.health.up").tag("component", "store").gauge().value()).isZero();
+    assertThat(meters.get("platform.health.up").tag("component", "store").gauge().value()).isZero();
   }
 
   private static <T> org.springframework.beans.factory.ObjectProvider<T> provider(T bean) {

@@ -1,4 +1,4 @@
-package uz.heeypay.ecom.observability;
+package uz.khakimjanovich.platform.observability;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -15,7 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
-import uz.heeypay.ecom.masking.Masking;
+import uz.khakimjanovich.platform.masking.Masking;
 
 /**
  * Every call this service makes, in three readable lines at most: what went out ({@code →}), what
@@ -31,7 +31,7 @@ public class HttpClientLogging implements ClientHttpRequestInterceptor {
   static final int MAX_LOGGED_BYTES = 4_000;
 
   /** The request attribute that keeps both bodies of a call out of the log. */
-  public static final String NO_BODIES = "ecom.http-client-logging.no-bodies";
+  public static final String NO_BODIES = "platform.http-client-logging.no-bodies";
 
   private static final String NOT_LOGGED = "<not logged>";
 
