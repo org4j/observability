@@ -1,4 +1,4 @@
-# observability
+# observability4j
 
 Logs, traces and metrics the same way in every service: logs with their trace on the console
 (readable text, or ECS JSON with `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs`) and over OTLP, one trace
