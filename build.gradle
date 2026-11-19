@@ -2,8 +2,8 @@
 // over OTLP, traces carried on every call, and metrics over OTLP. Adding the jar is enough: the
 // config library loads its observability-defaults.yaml, below the service's own configuration.
 plugins {
-    alias(libs.plugins.platform.library)
-    alias(libs.plugins.platform.integration.test)
+    alias(libs.plugins.conventions.library)
+    alias(libs.plugins.conventions.integration.test)
 }
 
 dependencies {
