@@ -9,7 +9,7 @@ attributes are not exported to OTLP (the masked trace travels in the message). L
 the context starts (the banner, the auto-configuration report, Vault's bootstrap) are not masked.
 
 ```groovy
-implementation libs.platform.observability
+implementation libs.observability4j
 ```
 
 Adding the jar is enough: its `observability-defaults.yaml` loads itself below the service's own
@@ -22,23 +22,23 @@ without them doesn't start (config, "Required settings").
 
 The module is structured into cohesive, domain-specific packages:
 
-- `uz.khakimjanovich.platform.observability.http`: Inbound and outbound HTTP wire loggers (`HttpServerLoggingFilter`, `HttpClientLogging`), trace id propagation (`RequestIdFilter`), and HTTP properties (`HttpLoggingProperties`).
-- `uz.khakimjanovich.platform.observability.logging`: Logback pattern converters (`LogMasking`), OpenTelemetry OTLP bridge (`MaskingOpenTelemetryAppender`), and masking properties (`LoggingMaskingProperties`).
-- `uz.khakimjanovich.platform.observability.health`: Actuator health metric gauges (`HealthMetrics`).
-- `uz.khakimjanovich.platform.observability`: Autoconfiguration entry point and shared constants.
+- `uz.khakimjanovich.observability4j.http`: Inbound and outbound HTTP wire loggers (`HttpServerLoggingFilter`, `HttpClientLogging`), trace id propagation (`RequestIdFilter`), and HTTP properties (`HttpLoggingProperties`).
+- `uz.khakimjanovich.observability4j.logging`: Logback pattern converters (`LogMasking`), OpenTelemetry OTLP bridge (`MaskingOpenTelemetryAppender`), and masking properties (`LoggingMaskingProperties`).
+- `uz.khakimjanovich.observability4j.health`: Actuator health metric gauges (`HealthMetrics`).
+- `uz.khakimjanovich.observability4j`: Autoconfiguration entry point and shared constants.
 
 ## Properties
 
 All configuration properties follow **fail-fast semantics** with zero hardcoded defaults.
 
-### Logging & Masking (`platform.logging.masking`)
+### Logging & Masking (`observability4j.logging.masking`)
 
 Masking operates with **zero hardcoded defaults**: if no masking fields are configured, logs remain unmasked. When fields are configured, values $\ge 10$ characters are masked preserving the first 6 and last 4 characters with dots (`860030......7890`), and values $< 10$ characters are masked 1:1 with dots (`...`).
 
 Configured via `application.yaml`:
 
 ```yaml
-platform:
+observability4j:
   logging:
     masking:
       mask-char: "."            # masking character
@@ -50,12 +50,12 @@ platform:
         - access_token
 ```
 
-### HTTP Wire Logging (`platform.logging.http`)
+### HTTP Wire Logging (`observability4j.logging.http`)
 
 Controls wire-level logging for inbound servlet requests and outbound client calls. When enabled, incoming and outgoing HTTP exchanges are captured, headers filtered/masked, and payloads sanitized:
 
 ```yaml
-platform:
+observability4j:
   logging:
     http:
       enabled: true             # master switch for HTTP wire logging
@@ -81,12 +81,12 @@ Ops teams can configure or update sensitive field lists and HTTP wire logging dy
 **HashiCorp Vault KV**:
 ```json
 {
-  "platform.logging.masking.fields": "pan,card,cvv,secret,access_token",
-  "platform.logging.masking.mask-char": ".",
-  "platform.logging.http.enabled": "true",
-  "platform.logging.http.max-body-bytes": "4000",
-  "platform.logging.http.include-headers": "content-type,x-request-id,authorization",
-  "platform.logging.http.exclude-paths": "/actuator/**,/swagger-ui/**"
+  "observability4j.logging.masking.fields": "pan,card,cvv,secret,access_token",
+  "observability4j.logging.masking.mask-char": ".",
+  "observability4j.logging.http.enabled": "true",
+  "observability4j.logging.http.max-body-bytes": "4000",
+  "observability4j.logging.http.include-headers": "content-type,x-request-id,authorization",
+  "observability4j.logging.http.exclude-paths": "/actuator/**,/swagger-ui/**"
 }
 ```
 
@@ -102,13 +102,13 @@ PLATFORM_LOGGING_HTTP_EXCLUDE_PATHS=/actuator/**,/swagger-ui/**
 
 | Property | What |
 |---|---|
-| `platform.logging.masking.mask-char` | Masking character used for obscured values |
-| `platform.logging.masking.fields` | Explicit list of sensitive field names to mask across JSON, XML, forms, URIs, and text |
-| `platform.logging.http.enabled` | Enables wire logging for inbound and outbound HTTP requests |
-| `platform.logging.http.max-body-bytes` | Caps logged body payloads, truncating with `<more than N bytes>` |
-| `platform.logging.http.include-headers` | Whitelist of HTTP headers to log; headers matching masking fields are dot-masked |
-| `platform.logging.http.exclude-paths` | URL path patterns completely excluded from HTTP wire logging |
-| `platform.logging.http.no-body-paths` | URL path patterns where bodies are replaced with `<not logged>` |
+| `observability4j.logging.masking.mask-char` | Masking character used for obscured values |
+| `observability4j.logging.masking.fields` | Explicit list of sensitive field names to mask across JSON, XML, forms, URIs, and text |
+| `observability4j.logging.http.enabled` | Enables wire logging for inbound and outbound HTTP requests |
+| `observability4j.logging.http.max-body-bytes` | Caps logged body payloads, truncating with `<more than N bytes>` |
+| `observability4j.logging.http.include-headers` | Whitelist of HTTP headers to log; headers matching masking fields are dot-masked |
+| `observability4j.logging.http.exclude-paths` | URL path patterns completely excluded from HTTP wire logging |
+| `observability4j.logging.http.no-body-paths` | URL path patterns where bodies are replaced with `<not logged>` |
 
 ## Client calls
 
@@ -122,7 +122,7 @@ attribute `HttpClientLogging.NO_BODIES` and is logged without either body (Keycl
 
 ## Health as a metric
 
-With the actuator, every health indicator is the gauge `platform.health.up{component}` (1 UP, 0
+With the actuator, every health indicator is the gauge `observability4j.health.up{component}` (1 UP, 0
 otherwise), so an alert can see a component go DOWN (the local stack's "Health DOWN").
 
 ## Beans you can replace
