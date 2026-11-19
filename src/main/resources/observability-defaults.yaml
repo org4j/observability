@@ -16,7 +16,7 @@ logging:
         traceId: trace.id
         spanId: span.id
       # Every message masked, as on the readable console and OTLP.
-      customizer: uz.khakimjanovich.observability4j.logging.LogMasking$Json
+      customizer: io.github.org4j.observability.logging.LogMasking$Json
 
 management:
   # One trace per request, carried to every call it makes (W3C traceparent) and onto every log line.
