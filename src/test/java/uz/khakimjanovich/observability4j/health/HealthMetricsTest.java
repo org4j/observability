@@ -36,7 +36,8 @@ class HealthMetricsTest {
     assertThat(meters.get("observability4j.health.up").tag("component", "broken").gauge().value())
         .isZero();
     down[0] = true;
-    assertThat(meters.get("observability4j.health.up").tag("component", "store").gauge().value()).isZero();
+    assertThat(meters.get("observability4j.health.up").tag("component", "store").gauge().value())
+        .isZero();
   }
 
   private static <T> org.springframework.beans.factory.ObjectProvider<T> provider(

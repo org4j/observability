@@ -83,8 +83,7 @@ class LogMaskingTest {
     assertThat(output)
         .contains("card pan=410030......7891 declined, client_secret=...")
         .contains(
-            "IllegalStateException",
-            "at uz.khakimjanovich.observability4j.logging.LogMaskingTest")
+            "IllegalStateException", "at uz.khakimjanovich.observability4j.logging.LogMaskingTest")
         .doesNotContain("4100301234567891", "t0p");
   }
 
