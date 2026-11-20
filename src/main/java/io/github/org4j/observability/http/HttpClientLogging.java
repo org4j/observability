@@ -98,7 +98,7 @@ public class HttpClientLogging implements ClientHttpRequestInterceptor {
         continue;
       }
       for (var value : headers.getOrEmpty(entry)) {
-        var maskedValue = masking.contains(entry) ? masking.maskValue(value) : value;
+        var maskedValue = masking.contains(entry) ? masking.mask(entry, value) : value;
         if (!joined.isEmpty()) {
           joined.append(", ");
         }
