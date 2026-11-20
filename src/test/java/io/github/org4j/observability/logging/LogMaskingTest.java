@@ -46,6 +46,7 @@ class LogMaskingTest {
             .run(arguments)) {
       LoggerFactory.getLogger(LogMaskingTest.class)
           .info("paid with pan=8600301234567890, client_secret=s3cr3t, EMBOS_NAME=AZIZ");
+      LoggerFactory.getLogger(LogMaskingTest.class).info("declined 9860090101191238 at the scheme");
       LoggerFactory.getLogger(LogMaskingTest.class)
           .error(
               "failed",
@@ -65,6 +66,21 @@ class LogMaskingTest {
     assertThat(output)
         .contains("pan=860030......7890", "client_secret=......", "EMBOS_NAME=AZIZ")
         .doesNotContain("8600301234567890", "s3cr3t");
+  }
+
+  @Test
+  void fullFieldsAreMaskedWholeAndValuesByTheirForm(CapturedOutput output) {
+    logInAnApp(
+        "--org4j.observability.logging.masking.fields=pan",
+        "--org4j.observability.logging.masking.full-fields=client_secret,EMBOS_NAME",
+        "--org4j.observability.logging.masking.values[0]=(?<!\\d)\\d{13,19}(?!\\d)");
+    assertThat(output)
+        .contains(
+            "pan=860030......7890",
+            "client_secret=......",
+            "EMBOS_NAME=....",
+            "declined 986009......1238 at the scheme")
+        .doesNotContain("8600301234567890", "s3cr3t", "AZIZ", "9860090101191238");
   }
 
   @Test

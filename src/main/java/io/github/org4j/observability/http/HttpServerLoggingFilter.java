@@ -139,7 +139,7 @@ public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ord
       for (var values = request.getHeaders(name); values != null && values.hasMoreElements(); ) {
         var value = values.nextElement();
         if (masking.contains(name)) {
-          value = masking.maskValue(value);
+          value = masking.mask(name, value);
         }
         if (!joined.isEmpty()) {
           joined.append(", ");

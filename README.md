@@ -33,7 +33,15 @@ All configuration properties follow **fail-fast semantics** with zero hardcoded 
 
 ### Logging & Masking (`org4j.observability.logging.masking`)
 
-Masking operates with **zero hardcoded defaults**: if no masking fields are configured, logs remain unmasked. When fields are configured, values $\ge 10$ characters are masked preserving the first 6 and last 4 characters with dots (`860030......7890`), and values $< 10$ characters are masked 1:1 with dots (`...`).
+Masking operates with **zero hardcoded defaults**: nothing is masked unless the service lists it.
+Three lists, all the service's own (the `masking` library):
+
+- `fields`: names whose values keep their first 6 and last 4 characters when 10 or longer
+  (`860030......7890`), and are masked whole when shorter (`...`);
+- `full-fields`: names whose values are masked whole, at most 10 mask characters long; a name in both lists is masked whole;
+- `values`: regular expressions for values found by their form in any text (a card number in a
+  message), each match masked like a name in `fields`. Write them as a YAML list or indexed
+  properties (`values[0]=…`): a comma-separated string splits a `{13,19}`.
 
 Configured via `application.yaml`:
 
@@ -43,12 +51,15 @@ org4j:
     logging:
       masking:
         mask-char: "."            # masking character
-        fields:                   # sensitive field names to mask (empty by default)
+        fields:                   # first 6 and last 4 kept (empty by default)
           - pan
           - card
+        full-fields:              # masked whole (empty by default)
           - cvv
           - secret
           - access_token
+        values:                   # found by their form in any text (empty by default)
+          - '(?<!\d)\d{13,19}(?!\d)'
 ```
 
 ### HTTP Wire Logging (`org4j.observability.logging.http`)
@@ -105,10 +116,12 @@ PLATFORM_LOGGING_HTTP_EXCLUDE_PATHS=/actuator/**,/swagger-ui/**
 | Property | What |
 |---|---|
 | `org4j.observability.logging.masking.mask-char` | Masking character used for obscured values |
-| `org4j.observability.logging.masking.fields` | Explicit list of sensitive field names to mask across JSON, XML, forms, URIs, and text |
+| `org4j.observability.logging.masking.fields` | Field names whose values keep their first 6 and last 4 characters, across JSON, XML, forms, URIs, and text |
+| `org4j.observability.logging.masking.full-fields` | Field names whose values are masked whole, at most 10 mask characters long |
+| `org4j.observability.logging.masking.values` | Regular expressions for values masked wherever they appear, with or without a field name |
 | `org4j.observability.logging.http.enabled` | Enables wire logging for inbound and outbound HTTP requests |
 | `org4j.observability.logging.http.max-body-bytes` | Caps logged body payloads, truncating with `<more than N bytes>` |
-| `org4j.observability.logging.http.include-headers` | Whitelist of HTTP headers to log; headers matching masking fields are dot-masked |
+| `org4j.observability.logging.http.include-headers` | Whitelist of HTTP headers to log; headers matching masking fields are masked by their field's rule |
 | `org4j.observability.logging.http.exclude-paths` | URL path patterns completely excluded from HTTP wire logging |
 | `org4j.observability.logging.http.no-body-paths` | URL path patterns where bodies are replaced with `<not logged>` |
 

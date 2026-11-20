@@ -8,6 +8,7 @@ import io.github.org4j.masking.Masking;
 import io.github.org4j.masking.MaskingRules;
 import io.github.org4j.observability.ObservabilityConstants;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -98,6 +99,32 @@ class HttpClientLoggingTest {
         .contains("→ POST /clients/c-1/client-secret | <not logged>")
         .contains("← 200 POST /clients/c-1/client-secret")
         .doesNotContain("abc", "xyz");
+  }
+
+  @Test
+  void outboundHeaderListedInFullFieldsIsMaskedWhole(CapturedOutput output) {
+    var customBuilder = RestClient.builder();
+    var customLogging =
+        new HttpClientLogging(
+            new Masking(new MaskingRules(".", Set.of(), Set.of("authorization"), List.of())),
+            new HttpLoggingProperties(true, 4000, List.of("authorization"), List.of(), List.of()));
+    customBuilder.requestInterceptor(customLogging);
+    var customServer = MockRestServiceServer.bindTo(customBuilder).build();
+    var customClient = customBuilder.build();
+
+    customServer.expect(requestTo("/ping")).andRespond(withSuccess("pong", MediaType.TEXT_PLAIN));
+
+    customClient
+        .get()
+        .uri("/ping")
+        .header("Authorization", "Bearer eyJhbGciOiJSUzI1NiJ9.x.abcd1234")
+        .retrieve()
+        .body(String.class);
+
+    assertThat(output)
+        .contains("[Authorization: " + ".".repeat(10) + "]")
+        .doesNotContain("Bearer eyJ")
+        .doesNotContain("1234]");
   }
 
   @Test
