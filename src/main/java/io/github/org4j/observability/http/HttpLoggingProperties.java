@@ -1,62 +1,64 @@
 package io.github.org4j.observability.http;
 
 import java.util.List;
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.util.AntPathMatcher;
 
 /**
- * Configuration properties for HTTP wire logging under org4j.observability.logging.http.
+ * HTTP wire logging, under {@code org4j.observability.logging.http}.
  *
- * @param enabled master switch for HTTP wire logging
- * @param maxBodyBytes maximum body size in bytes to log before truncating
- * @param includeHeaders list of HTTP header names to log (case-insensitive)
- * @param excludePaths ant-style URL path patterns to completely exclude from HTTP wire logging
- * @param noBodyPaths ant-style URL path patterns where request and response bodies are not logged
+ * @param enabled logs every request the service serves; client calls are logged either way
+ * @param maxBodyBytes the longest body logged, in both directions; a longer one is logged as {@code
+ *     <more than N bytes, type>}
+ * @param includeHeaders headers logged with the request line (case-insensitive); none by default. A
+ *     header named in the masking lists is masked by its rule.
+ * @param excludePaths Ant-style paths whose requests are not logged at all
+ * @param noBodyPaths Ant-style paths whose requests are logged without their bodies
  */
 @ConfigurationProperties("org4j.observability.logging.http")
 public record HttpLoggingProperties(
     boolean enabled,
     int maxBodyBytes,
-    @Nullable List<String> includeHeaders,
-    @Nullable List<String> excludePaths,
-    @Nullable List<String> noBodyPaths) {
+    List<String> includeHeaders,
+    List<String> excludePaths,
+    List<String> noBodyPaths) {
 
-  private static final AntPathMatcher MATCHER = new AntPathMatcher();
+  private static final AntPathMatcher PATHS = new AntPathMatcher();
+
+  public HttpLoggingProperties(
+      boolean enabled,
+      @DefaultValue("4000") int maxBodyBytes,
+      @Nullable List<String> includeHeaders,
+      @Nullable List<String> excludePaths,
+      @Nullable List<String> noBodyPaths) {
+    this.enabled = enabled;
+    this.maxBodyBytes = maxBodyBytes;
+    this.includeHeaders = Objects.requireNonNullElse(includeHeaders, List.of());
+    this.excludePaths = Objects.requireNonNullElse(excludePaths, List.of());
+    this.noBodyPaths = Objects.requireNonNullElse(noBodyPaths, List.of());
+  }
+
+  /** Client logging when nothing is configured: no headers, bodies up to 4 000 bytes. */
+  static HttpLoggingProperties defaults() {
+    return new HttpLoggingProperties(false, 4_000, null, null, null);
+  }
 
   public boolean isHeaderIncluded(String name) {
-    if (includeHeaders == null || includeHeaders.isEmpty()) {
-      return false;
-    }
-    for (var header : includeHeaders) {
-      if (header.equalsIgnoreCase(name)) {
-        return true;
-      }
-    }
-    return false;
+    return includeHeaders.stream().anyMatch(name::equalsIgnoreCase);
   }
 
   public boolean isExcluded(String path) {
-    if (excludePaths == null || excludePaths.isEmpty()) {
-      return false;
-    }
-    for (var pattern : excludePaths) {
-      if (MATCHER.match(pattern, path)) {
-        return true;
-      }
-    }
-    return false;
+    return matches(excludePaths, path);
   }
 
   public boolean isNoBody(String path) {
-    if (noBodyPaths == null || noBodyPaths.isEmpty()) {
-      return false;
-    }
-    for (var pattern : noBodyPaths) {
-      if (MATCHER.match(pattern, path)) {
-        return true;
-      }
-    }
-    return false;
+    return matches(noBodyPaths, path);
+  }
+
+  private static boolean matches(List<String> patterns, String path) {
+    return patterns.stream().anyMatch(pattern -> PATHS.match(pattern, path));
   }
 }

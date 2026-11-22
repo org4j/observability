@@ -1,3 +1,4 @@
+/** Health indicators as gauges. */
 @NullMarked
 package io.github.org4j.observability.health;
 

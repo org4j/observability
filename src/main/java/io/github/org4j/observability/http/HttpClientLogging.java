@@ -1,39 +1,39 @@
 package io.github.org4j.observability.http;
 
-import static io.github.org4j.observability.ObservabilityConstants.MAX_LOGGED_BYTES;
-import static io.github.org4j.observability.ObservabilityConstants.NOT_LOGGED;
 import static io.github.org4j.observability.ObservabilityConstants.NO_BODIES;
+import static io.github.org4j.observability.http.HttpConstants.NOT_LOGGED;
 
 import io.github.org4j.masking.Masking;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
-import java.util.List;
-import java.util.Locale;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
 import org.springframework.http.HttpStatusCode;
-import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestExecution;
 import org.springframework.http.client.ClientHttpRequestInterceptor;
 import org.springframework.http.client.ClientHttpResponse;
 
+/**
+ * Logs every client call in at most three lines: {@code →} with the masked URI and request body,
+ * then {@code ←} with the status, time and masked response body, or {@code ✗} when the call fails.
+ *
+ * <p>Only a JSON, XML or form answer of up to {@code max-body-bytes} is read for the log; anything
+ * else streams through, logged by its size. A request carrying the attribute {@link
+ * io.github.org4j.observability.ObservabilityConstants#NO_BODIES NO_BODIES} is logged without
+ * either body. Installed on every {@code RestClient.Builder}; a client built on its own request
+ * factory adds the bean itself.
+ */
 public class HttpClientLogging implements ClientHttpRequestInterceptor {
 
   private static final Logger log = LoggerFactory.getLogger(HttpClientLogging.class);
 
   private final Masking masking;
   private final HttpLoggingProperties properties;
-
-  public HttpClientLogging(Masking masking) {
-    this(
-        masking,
-        new HttpLoggingProperties(false, MAX_LOGGED_BYTES, List.of(), List.of(), List.of()));
-  }
 
   public HttpClientLogging(Masking masking, HttpLoggingProperties properties) {
     this.masking = masking;
@@ -44,90 +44,61 @@ public class HttpClientLogging implements ClientHttpRequestInterceptor {
   public ClientHttpResponse intercept(
       HttpRequest request, byte[] body, ClientHttpRequestExecution execution) throws IOException {
     var call = request.getMethod() + " " + masking.uri(request.getURI());
-    var headersString = formatHeaders(request.getHeaders());
-    var callWithHeaders = headersString.isEmpty() ? call : call + " " + headersString;
+    var headers = request.getHeaders();
     var bodies = !request.getAttributes().containsKey(NO_BODIES);
     log.info(
-        "→ {} | {}",
-        callWithHeaders,
-        bodies ? masking.body(body, type(request.getHeaders())) : NOT_LOGGED);
+        "→ {}{} | {}",
+        call,
+        WireLog.headers(masking, properties, headers.headerNames(), headers::getOrEmpty),
+        bodies ? masking.body(body, type(headers)) : NOT_LOGGED);
+
     var started = System.nanoTime();
     ClientHttpResponse response;
     try {
       response = execution.execute(request, body);
     } catch (IOException e) {
-      log.warn("✗ {} | {} ms | {}", call, millis(started), e.toString());
+      log.warn("✗ {} | {} ms | {}", call, WireLog.millisSince(started), e.toString());
       throw e;
     }
-    var headers = response.getHeaders();
-    var length = headers.getContentLength();
+
+    var answer = response;
     String logged;
-    ClientHttpResponse answer = response;
+    var answerHeaders = response.getHeaders();
+    var contentType = answerHeaders.getContentType();
+    var length = answerHeaders.getContentLength();
+    var max = properties.maxBodyBytes();
     if (!bodies) {
       logged = NOT_LOGGED;
-    } else if (!loggable(headers.getContentType()) || length > MAX_LOGGED_BYTES) {
-      logged = size(length, headers);
+    } else if (!WireLog.readable(contentType) || length > max) {
+      logged = WireLog.size(length, contentType);
     } else {
       // Read at most one byte past the cap: a longer body is put back in front of the rest.
-      var start = response.getBody().readNBytes(MAX_LOGGED_BYTES + 1);
-      if (start.length <= MAX_LOGGED_BYTES) {
-        logged = masking.body(start, type(headers));
+      var start = response.getBody().readNBytes(max + 1);
+      if (start.length <= max) {
+        logged = masking.body(start, type(answerHeaders));
         answer = new Read(response, new ByteArrayInputStream(start));
       } else {
-        logged = "<more than " + MAX_LOGGED_BYTES + " bytes, " + headers.getContentType() + ">";
+        logged = WireLog.tooLong(max, contentType);
         answer =
             new Read(
                 response,
                 new SequenceInputStream(new ByteArrayInputStream(start), response.getBody()));
       }
     }
+
     var status = response.getStatusCode();
     var line = "← {} {} | {} ms | {}";
-    if (status.isError()) log.warn(line, status.value(), call, millis(started), logged);
-    else log.info(line, status.value(), call, millis(started), logged);
+    if (status.isError()) {
+      log.warn(line, status.value(), call, WireLog.millisSince(started), logged);
+    } else {
+      log.info(line, status.value(), call, WireLog.millisSince(started), logged);
+    }
     return answer;
-  }
-
-  private String formatHeaders(HttpHeaders headers) {
-    if (properties.includeHeaders() == null || properties.includeHeaders().isEmpty()) {
-      return "";
-    }
-    var joined = new StringBuilder();
-    for (var entry : headers.headerNames()) {
-      if (!properties.isHeaderIncluded(entry)) {
-        continue;
-      }
-      for (var value : headers.getOrEmpty(entry)) {
-        var maskedValue = masking.contains(entry) ? masking.mask(entry, value) : value;
-        if (!joined.isEmpty()) {
-          joined.append(", ");
-        }
-        joined.append(entry).append(": ").append(maskedValue);
-      }
-    }
-    return joined.isEmpty() ? "" : "[" + joined + "]";
-  }
-
-  private static boolean loggable(@Nullable MediaType type) {
-    if (type == null) return false;
-    var subtype = type.getSubtype().toLowerCase(Locale.ROOT);
-    return subtype.contains("json")
-        || subtype.contains("xml")
-        || MediaType.APPLICATION_FORM_URLENCODED.equalsTypeAndSubtype(type);
-  }
-
-  private static String size(long length, HttpHeaders headers) {
-    var type = headers.getContentType();
-    return "<" + (length < 0 ? "?" : length) + " bytes" + (type == null ? "" : ", " + type) + ">";
   }
 
   private static @Nullable String type(HttpHeaders headers) {
     var type = headers.getContentType();
     return type == null ? null : type.toString();
-  }
-
-  private static long millis(long started) {
-    return (System.nanoTime() - started) / 1_000_000;
   }
 
   private record Read(ClientHttpResponse response, InputStream body) implements ClientHttpResponse {

@@ -12,6 +12,11 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.Ordered;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+/**
+ * Names the request's trace in the {@value
+ * io.github.org4j.observability.ObservabilityConstants#REQUEST_ID_HEADER} response header, set
+ * before the request is handled so a 401 or 403 carries it too.
+ */
 public class RequestIdFilter extends OncePerRequestFilter implements Ordered {
 
   private final ObjectProvider<Tracer> tracer;
@@ -20,6 +25,7 @@ public class RequestIdFilter extends OncePerRequestFilter implements Ordered {
     this.tracer = tracer;
   }
 
+  // Right after Spring's ServerHttpObservationFilter (+1), which starts the trace.
   @Override
   public int getOrder() {
     return Ordered.HIGHEST_PRECEDENCE + 2;

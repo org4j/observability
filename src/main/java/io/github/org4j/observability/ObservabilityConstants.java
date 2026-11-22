@@ -1,30 +1,22 @@
 package io.github.org4j.observability;
 
-import java.util.List;
-import lombok.experimental.UtilityClass;
+/** Names a service or a dashboard can rely on. */
+public final class ObservabilityConstants {
 
-@UtilityClass
-public class ObservabilityConstants {
-
-  public static final String OTEL_APPENDER = "OTEL";
-
+  /** The gauge per health indicator: 1 while UP, 0 otherwise. */
   public static final String HEALTH_METRIC = "org4j.observability.health.up";
+
+  /** The tag naming the health indicator on {@link #HEALTH_METRIC}. */
   public static final String COMPONENT_TAG = "component";
-  public static final String HEALTH_METRIC_DESCRIPTION = "1 while the component's health is UP";
 
-  public static final int MAX_LOGGED_BYTES = 4_000;
-
+  /**
+   * A request attribute: a client call that carries it is logged without its request and response
+   * bodies, for calls that send or receive a secret.
+   */
   public static final String NO_BODIES = "org4j.observability.http-client-logging.no-bodies";
 
-  public static final String NOT_LOGGED = "<not logged>";
-
-  public static final List<String> MESSAGE_WORDS = List.of("m", "msg", "message");
-
-  public static final List<String> THROWABLE_WORDS =
-      List.of("ex", "exception", "throwable", "xEx", "xException", "xThrowable", "wex", "wEx");
-
-  public static final List<String> JSON_TEXT =
-      List.of("message", "error.message", "error.stack_trace");
-
+  /** The response header that names the request's trace id. */
   public static final String REQUEST_ID_HEADER = "X-Request-Id";
+
+  private ObservabilityConstants() {}
 }

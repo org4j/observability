@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 
+/** Binds the meters of every {@link Breaker} bean, once all singletons exist. */
 @RequiredArgsConstructor
 public class BreakerMetrics implements SmartInitializingSingleton {
 
