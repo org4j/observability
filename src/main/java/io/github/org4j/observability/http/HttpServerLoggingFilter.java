@@ -17,11 +17,17 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.SequenceInputStream;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Pattern;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,18 +81,25 @@ public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ord
       requestBody = NOT_LOGGED;
     } else if (!WireLog.readable(contentType)) {
       requestBody = WireLog.size(request.getContentLengthLong(), contentType);
+    } else if (isForm(contentType)) {
+      // Read whole, as the container would to parse it: the app's parameters come from it now.
+      var form = request.getInputStream().readAllBytes();
+      requestBody =
+          form.length <= max ? masking.body(form, contentType) : WireLog.tooLong(max, contentType);
+      served = new Replayed(request, new ByteArrayInputStream(form), parameters(request, form));
     } else {
       // Read at most one byte past the cap: a longer body is put back in front of the rest.
       var start = request.getInputStream().readNBytes(max + 1);
       if (start.length <= max) {
         requestBody = masking.body(start, contentType);
-        served = new Replayed(request, new ByteArrayInputStream(start));
+        served = new Replayed(request, new ByteArrayInputStream(start), null);
       } else {
         requestBody = WireLog.tooLong(max, contentType);
         served =
             new Replayed(
                 request,
-                new SequenceInputStream(new ByteArrayInputStream(start), request.getInputStream()));
+                new SequenceInputStream(new ByteArrayInputStream(start), request.getInputStream()),
+                null);
       }
     }
     var headers =
@@ -127,6 +140,48 @@ public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ord
     }
   }
 
+  private static boolean isForm(String contentType) {
+    return contentType.toLowerCase(Locale.ROOT).startsWith("application/x-www-form-urlencoded");
+  }
+
+  // Once the body is taken, the container parses only the query string: the body's pairs follow.
+  // A pair that does not decode is skipped, as the container does.
+  private static Map<String, String[]> parameters(HttpServletRequest request, byte[] form) {
+    var charset = charset(request);
+    var merged = new LinkedHashMap<String, List<String>>();
+    request
+        .getParameterMap()
+        .forEach(
+            (name, values) ->
+                merged.computeIfAbsent(name, n -> new ArrayList<>()).addAll(List.of(values)));
+    Pattern.compile("&")
+        .splitAsStream(new String(form, charset))
+        .forEach(pair -> add(merged, pair, charset));
+    var parameters = new LinkedHashMap<String, String[]>();
+    merged.forEach((name, values) -> parameters.put(name, values.toArray(String[]::new)));
+    return Collections.unmodifiableMap(parameters);
+  }
+
+  private static void add(Map<String, List<String>> parameters, String pair, Charset charset) {
+    var at = pair.indexOf('=');
+    String name;
+    String value;
+    try {
+      name = URLDecoder.decode(at < 0 ? pair : pair.substring(0, at), charset);
+      value = at < 0 ? "" : URLDecoder.decode(pair.substring(at + 1), charset);
+    } catch (IllegalArgumentException malformed) {
+      return;
+    }
+    if (!name.isEmpty()) {
+      parameters.computeIfAbsent(name, n -> new ArrayList<>()).add(value);
+    }
+  }
+
+  private static Charset charset(HttpServletRequest request) {
+    var encoding = request.getCharacterEncoding();
+    return encoding == null ? StandardCharsets.UTF_8 : Charset.forName(encoding);
+  }
+
   // A container may refuse to list headers, and return null.
   private static List<String> listed(@Nullable Enumeration<String> values) {
     return values == null ? List.of() : Collections.list(values);
@@ -144,10 +199,43 @@ public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ord
   private static final class Replayed extends HttpServletRequestWrapper {
 
     private final InputStream body;
+    private final @Nullable Map<String, String[]> parameters;
 
-    Replayed(HttpServletRequest request, InputStream body) {
+    Replayed(
+        HttpServletRequest request, InputStream body, @Nullable Map<String, String[]> parameters) {
       super(request);
       this.body = body;
+      this.parameters = parameters;
+    }
+
+    @Override
+    public @Nullable String getParameter(String name) {
+      if (parameters == null) {
+        return super.getParameter(name);
+      }
+      var values = parameters.get(name);
+      return values == null ? null : values[0];
+    }
+
+    @Override
+    public Map<String, String[]> getParameterMap() {
+      return parameters == null ? super.getParameterMap() : parameters;
+    }
+
+    @Override
+    public Enumeration<String> getParameterNames() {
+      return parameters == null
+          ? super.getParameterNames()
+          : Collections.enumeration(parameters.keySet());
+    }
+
+    @Override
+    public String @Nullable [] getParameterValues(String name) {
+      if (parameters == null) {
+        return super.getParameterValues(name);
+      }
+      var values = parameters.get(name);
+      return values == null ? null : values.clone();
     }
 
     @Override
@@ -188,9 +276,7 @@ public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ord
 
     @Override
     public BufferedReader getReader() {
-      var encoding = getCharacterEncoding();
-      var charset = encoding == null ? StandardCharsets.UTF_8 : Charset.forName(encoding);
-      return new BufferedReader(new InputStreamReader(getInputStream(), charset));
+      return new BufferedReader(new InputStreamReader(getInputStream(), charset(this)));
     }
   }
 }
