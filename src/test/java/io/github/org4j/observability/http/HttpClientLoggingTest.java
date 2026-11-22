@@ -24,7 +24,8 @@ class HttpClientLoggingTest {
       RestClient.builder()
           .requestInterceptor(
               new HttpClientLogging(
-                  new Masking(MaskingRules.of(List.of("access_token", "pan", "value")))));
+                  new Masking(MaskingRules.of(List.of("access_token", "pan", "value"))),
+                  HttpLoggingProperties.defaults()));
   private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
   private final RestClient client = builder.build();
 

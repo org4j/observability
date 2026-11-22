@@ -1,6 +1,6 @@
 package io.github.org4j.observability.http;
 
-import static io.github.org4j.observability.ObservabilityConstants.NOT_LOGGED;
+import static io.github.org4j.observability.http.HttpConstants.NOT_LOGGED;
 
 import io.github.org4j.masking.Masking;
 import jakarta.servlet.FilterChain;
@@ -13,11 +13,15 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.SequenceInputStream;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +29,14 @@ import org.springframework.core.Ordered;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingResponseWrapper;
 
+/**
+ * Logs every request the service serves, when {@code org4j.observability.logging.http.enabled}:
+ * {@code →} with the masked URI, the included headers and the masked body, then {@code ←} with the
+ * status, time and masked response body, or {@code ✗} when the request fails.
+ *
+ * <p>Only a JSON, XML or form body is logged; anything else is logged by its size, and a body
+ * longer than {@code max-body-bytes} by its type. At most one byte past the cap is held in memory.
+ */
 public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ordered {
 
   private static final Logger log = LoggerFactory.getLogger(HttpServerLoggingFilter.class);
@@ -37,6 +49,7 @@ public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ord
     this.properties = properties;
   }
 
+  // After RequestIdFilter, so the response already names its trace.
   @Override
   public int getOrder() {
     return Ordered.HIGHEST_PRECEDENCE + 3;
@@ -49,150 +62,102 @@ public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ord
 
   @Override
   protected void doFilterInternal(
-      HttpServletRequest request, HttpServletResponse response, FilterChain chain)
+      HttpServletRequest request, HttpServletResponse servletResponse, FilterChain chain)
       throws ServletException, IOException {
-    var uri = request.getRequestURI();
-    var query = request.getQueryString();
-    var whole = query == null ? uri : uri + "?" + query;
-    String maskedUri;
-    try {
-      maskedUri = masking.uri(URI.create(whole));
-    } catch (IllegalArgumentException e) {
-      maskedUri = whole;
-    }
+    var call = request.getMethod() + " " + maskedUri(request);
+    var noBody = properties.isNoBody(request.getRequestURI());
+    var contentType = request.getContentType();
+    var max = properties.maxBodyBytes();
 
-    var call = request.getMethod() + " " + maskedUri;
-    var headersString = formatHeaders(request);
-    var callWithHeaders = headersString.isEmpty() ? call : call + " " + headersString;
-
-    var noBody = properties.isNoBody(uri);
-    HttpServletRequest requestToUse = request;
+    var served = request;
     String requestBody;
-
     if (noBody) {
       requestBody = NOT_LOGGED;
-    } else if (isMultipart(request)) {
-      requestBody = "<multipart/form-data>";
-    } else if (!isLoggable(request.getContentType())) {
-      requestBody = size(request.getContentLengthLong(), request.getContentType());
+    } else if (!WireLog.readable(contentType)) {
+      requestBody = WireLog.size(request.getContentLengthLong(), contentType);
     } else {
-      var raw = request.getInputStream().readAllBytes();
-      requestToUse = new CachedRequest(request, raw);
-      if (raw.length > properties.maxBodyBytes()) {
-        requestBody =
-            "<more than " + properties.maxBodyBytes() + " bytes, " + request.getContentType() + ">";
+      // Read at most one byte past the cap: a longer body is put back in front of the rest.
+      var start = request.getInputStream().readNBytes(max + 1);
+      if (start.length <= max) {
+        requestBody = masking.body(start, contentType);
+        served = new Replayed(request, new ByteArrayInputStream(start));
       } else {
-        requestBody = masking.body(raw, request.getContentType());
+        requestBody = WireLog.tooLong(max, contentType);
+        served =
+            new Replayed(
+                request,
+                new SequenceInputStream(new ByteArrayInputStream(start), request.getInputStream()));
       }
     }
+    var headers =
+        WireLog.headers(
+            masking,
+            properties,
+            listed(request.getHeaderNames()),
+            name -> listed(request.getHeaders(name)));
+    log.info("→ {}{} | {}", call, headers, requestBody);
 
-    log.info("→ {} | {}", callWithHeaders, requestBody);
-
-    var responseWrapper = new ContentCachingResponseWrapper(response);
+    var response = new ContentCachingResponseWrapper(servletResponse);
     var started = System.nanoTime();
     try {
-      chain.doFilter(requestToUse, responseWrapper);
-    } catch (Exception e) {
-      log.warn("✗ {} | {} ms | {}", call, millis(started), e.toString());
+      chain.doFilter(served, response);
+      var status = response.getStatus();
+      var line = "← {} {} | {} ms | {}";
+      var responseBody = noBody ? NOT_LOGGED : responseBody(response, max);
+      if (status >= 400) {
+        log.warn(line, status, call, WireLog.millisSince(started), responseBody);
+      } else {
+        log.info(line, status, call, WireLog.millisSince(started), responseBody);
+      }
+    } catch (IOException | ServletException | RuntimeException e) {
+      log.warn("✗ {} | {} ms | {}", call, WireLog.millisSince(started), e.toString());
       throw e;
     } finally {
-      var status = responseWrapper.getStatus();
-      String responseBody;
-      if (noBody) {
-        responseBody = NOT_LOGGED;
-      } else if (!isLoggable(responseWrapper.getContentType())) {
-        responseBody = size(responseWrapper.getContentSize(), responseWrapper.getContentType());
-      } else {
-        var rawResponse = responseWrapper.getContentAsByteArray();
-        if (rawResponse.length > properties.maxBodyBytes()) {
-          responseBody =
-              "<more than "
-                  + properties.maxBodyBytes()
-                  + " bytes, "
-                  + responseWrapper.getContentType()
-                  + ">";
-        } else {
-          responseBody = masking.body(rawResponse, responseWrapper.getContentType());
-        }
-      }
-
-      var line = "← {} {} | {} ms | {}";
-      if (status >= 400) {
-        log.warn(line, status, call, millis(started), responseBody);
-      } else {
-        log.info(line, status, call, millis(started), responseBody);
-      }
-      responseWrapper.copyBodyToResponse();
+      response.copyBodyToResponse();
     }
   }
 
-  private String formatHeaders(HttpServletRequest request) {
-    if (properties.includeHeaders() == null || properties.includeHeaders().isEmpty()) {
-      return "";
+  private String maskedUri(HttpServletRequest request) {
+    var query = request.getQueryString();
+    var whole = query == null ? request.getRequestURI() : request.getRequestURI() + "?" + query;
+    try {
+      return masking.uri(URI.create(whole));
+    } catch (IllegalArgumentException e) {
+      return whole;
     }
-    var joined = new StringBuilder();
-    for (var names = request.getHeaderNames(); names != null && names.hasMoreElements(); ) {
-      var name = names.nextElement();
-      if (!properties.isHeaderIncluded(name)) {
-        continue;
-      }
-      for (var values = request.getHeaders(name); values != null && values.hasMoreElements(); ) {
-        var value = values.nextElement();
-        if (masking.contains(name)) {
-          value = masking.mask(name, value);
-        }
-        if (!joined.isEmpty()) {
-          joined.append(", ");
-        }
-        joined.append(name).append(": ").append(value);
-      }
+  }
+
+  // A container may refuse to list headers, and return null.
+  private static List<String> listed(@Nullable Enumeration<String> values) {
+    return values == null ? List.of() : Collections.list(values);
+  }
+
+  private String responseBody(ContentCachingResponseWrapper response, int max) {
+    var contentType = response.getContentType();
+    if (!WireLog.readable(contentType)) {
+      return WireLog.size(response.getContentSize(), contentType);
     }
-    return joined.isEmpty() ? "" : "[" + joined + "]";
+    var body = response.getContentAsByteArray();
+    return body.length > max ? WireLog.tooLong(max, contentType) : masking.body(body, contentType);
   }
 
-  private static boolean isLoggable(@Nullable String contentType) {
-    if (contentType == null) {
-      return true;
-    }
-    var lower = contentType.toLowerCase(Locale.ROOT);
-    return lower.contains("json")
-        || lower.contains("xml")
-        || lower.contains("text")
-        || lower.contains("x-www-form-urlencoded");
-  }
+  private static final class Replayed extends HttpServletRequestWrapper {
 
-  private static boolean isMultipart(HttpServletRequest request) {
-    var type = request.getContentType();
-    return type != null && type.toLowerCase(Locale.ROOT).contains("multipart");
-  }
+    private final InputStream body;
 
-  private static String size(long length, @Nullable String contentType) {
-    return "<"
-        + (length < 0 ? "?" : length)
-        + " bytes"
-        + (contentType == null ? "" : ", " + contentType)
-        + ">";
-  }
-
-  private static long millis(long started) {
-    return (System.nanoTime() - started) / 1_000_000;
-  }
-
-  private static class CachedRequest extends HttpServletRequestWrapper {
-    private final byte[] body;
-
-    CachedRequest(HttpServletRequest request, byte[] body) {
+    Replayed(HttpServletRequest request, InputStream body) {
       super(request);
       this.body = body;
     }
 
     @Override
     public ServletInputStream getInputStream() {
-      var stream = new ByteArrayInputStream(body);
       return new ServletInputStream() {
+        private boolean finished;
+
         @Override
         public boolean isFinished() {
-          return stream.available() == 0;
+          return finished;
         }
 
         @Override
@@ -206,13 +171,17 @@ public class HttpServerLoggingFilter extends OncePerRequestFilter implements Ord
         }
 
         @Override
-        public int read() {
-          return stream.read();
+        public int read() throws IOException {
+          var next = body.read();
+          finished = next < 0;
+          return next;
         }
 
         @Override
-        public int read(byte[] b, int off, int len) {
-          return stream.read(b, off, len);
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+          var count = body.read(buffer, offset, length);
+          finished = count < 0;
+          return count;
         }
       };
     }

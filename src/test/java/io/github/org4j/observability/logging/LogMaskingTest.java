@@ -190,4 +190,28 @@ class LogMaskingTest {
     assertThat(masked.getThrowableProxy()).isNull();
     assertThat(masked.getFormattedMessage()).isEqualTo("no exception here pan=860030......7890");
   }
+
+  @Test
+  void otlpEventKeepsTheClassNameOfAnExceptionItCannotCopy() {
+    var event = new LoggingEvent();
+    event.setMessage("failed");
+    event.setThrowableProxy(new ThrowableProxy(new NoMessage()));
+    LogMasking.install(
+        (ch.qos.logback.classic.LoggerContext) LoggerFactory.getILoggerFactory(),
+        new Masking(MaskingRules.of(List.of("pan"))));
+
+    var proxy = LogMasking.masked(event).getThrowableProxy();
+
+    assertThat(proxy.getClassName()).isEqualTo(NoMessage.class.getName());
+    assertThat(((ThrowableProxy) proxy).getThrowable().toString())
+        .isEqualTo(NoMessage.class.getName() + ": pan=860030......7890");
+  }
+
+  static final class NoMessage extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+
+    NoMessage() {
+      super("pan=8600301234567890");
+    }
+  }
 }

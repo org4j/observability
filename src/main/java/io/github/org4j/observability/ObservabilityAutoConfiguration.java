@@ -1,11 +1,8 @@
 package io.github.org4j.observability;
 
-import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import io.github.org4j.breaker.Breaker;
 import io.github.org4j.masking.Masking;
-import io.github.org4j.masking.MaskingConstants;
-import io.github.org4j.masking.MaskingRules;
 import io.github.org4j.observability.breaker.BreakerMetrics;
 import io.github.org4j.observability.context.ContextPropagatingTaskDecorator;
 import io.github.org4j.observability.health.HealthMetrics;
@@ -15,16 +12,10 @@ import io.github.org4j.observability.http.HttpServerLoggingFilter;
 import io.github.org4j.observability.http.RequestIdFilter;
 import io.github.org4j.observability.logging.LogMasking;
 import io.github.org4j.observability.logging.LoggingMaskingProperties;
-import io.github.org4j.observability.logging.MaskingOpenTelemetryAppender;
 import io.micrometer.context.ContextSnapshot;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Tracer;
 import io.opentelemetry.api.OpenTelemetry;
-import io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender;
-import java.util.List;
-import java.util.Set;
-import java.util.regex.Pattern;
-import org.jspecify.annotations.Nullable;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.ObjectProvider;
@@ -40,24 +31,19 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.task.TaskDecorator;
 
+/**
+ * Wires the library into a Spring Boot service: masked logs on every sink, client and server wire
+ * logging, {@code X-Request-Id}, health and breaker gauges, and context carried across threads.
+ * Every bean backs off when the service defines its own.
+ */
 @AutoConfiguration
 @EnableConfigurationProperties({LoggingMaskingProperties.class, HttpLoggingProperties.class})
 public class ObservabilityAutoConfiguration {
 
   @Bean
   @ConditionalOnMissingBean
-  Masking logMasking(LoggingMaskingProperties loggingProperties) {
-    var maskChar = loggingProperties.maskChar();
-    return new Masking(
-        new MaskingRules(
-            maskChar == null ? MaskingConstants.DEFAULT_MASK_CHAR : maskChar,
-            Set.copyOf(listed(loggingProperties.fields())),
-            Set.copyOf(listed(loggingProperties.fullFields())),
-            listed(loggingProperties.values()).stream().map(Pattern::compile).toList()));
-  }
-
-  private static List<String> listed(@Nullable List<String> names) {
-    return names == null ? List.of() : names;
+  Masking logMasking(LoggingMaskingProperties properties) {
+    return new Masking(properties.rules());
   }
 
   @Bean
@@ -65,26 +51,14 @@ public class ObservabilityAutoConfiguration {
     return () -> {
       var context = (LoggerContext) LoggerFactory.getILoggerFactory();
       LogMasking.install(context, logMasking);
-      openTelemetry.ifAvailable(
-          otel -> {
-            var appender = new MaskingOpenTelemetryAppender();
-            appender.setContext(context);
-            appender.setName(ObservabilityConstants.OTEL_APPENDER);
-            appender.start();
-            context.getLogger(Logger.ROOT_LOGGER_NAME).addAppender(appender);
-            OpenTelemetryAppender.install(otel);
-          });
+      openTelemetry.ifAvailable(otel -> LogMasking.installOpenTelemetry(context, otel));
     };
   }
 
   @Bean
   @ConditionalOnMissingBean
-  HttpClientLogging httpClientLogging(
-      Masking logMasking, ObjectProvider<HttpLoggingProperties> httpLoggingProperties) {
-    var props = httpLoggingProperties.getIfAvailable();
-    return props == null
-        ? new HttpClientLogging(logMasking)
-        : new HttpClientLogging(logMasking, props);
+  HttpClientLogging httpClientLogging(Masking logMasking, HttpLoggingProperties properties) {
+    return new HttpClientLogging(logMasking, properties);
   }
 
   @Bean

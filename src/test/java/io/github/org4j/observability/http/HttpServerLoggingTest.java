@@ -1,6 +1,7 @@
 package io.github.org4j.observability.http;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -43,6 +44,11 @@ class HttpServerLoggingTest {
     @PostMapping(value = "/crypto/keys", produces = MediaType.APPLICATION_JSON_VALUE)
     String crypto(@RequestBody String body) {
       return "{\"key\":\"super-secret\"}";
+    }
+
+    @PostMapping("/boom")
+    String boom() {
+      throw new IllegalStateException("handler failed");
     }
 
     @PostMapping(value = "/file", produces = MediaType.APPLICATION_PDF_VALUE)
@@ -140,9 +146,36 @@ class HttpServerLoggingTest {
     var large = "{\"data\":\"" + "a".repeat(100) + "\"}";
 
     mvc.perform(post("/payments").contentType(MediaType.APPLICATION_JSON).content(large))
-        .andExpect(status().isOk());
+        .andExpect(status().isOk())
+        .andExpect(content().string(large));
 
-    assertThat(output).contains("<more than 50 bytes, application/json>");
+    assertThat(output)
+        .contains("→ POST /payments | <more than 50 bytes, application/json>")
+        .doesNotContain("aaaa");
+  }
+
+  @Test
+  void aBodyMaskingCannotSearchIsLoggedBySize(CapturedOutput output) throws Exception {
+    var properties = new HttpLoggingProperties(true, 4000, null, null, null);
+
+    mvc(properties)
+        .perform(
+            post("/payments").contentType(MediaType.TEXT_PLAIN).content("pan 8600301234567890"))
+        .andExpect(status().isUnsupportedMediaType());
+
+    assertThat(output)
+        .contains("→ POST /payments | <20 bytes, text/plain>")
+        .doesNotContain("8600301234567890");
+  }
+
+  @Test
+  void aFailedRequestIsLoggedOnceAsFailed(CapturedOutput output) {
+    var properties = new HttpLoggingProperties(true, 4000, null, null, null);
+
+    assertThatThrownBy(() -> mvc(properties).perform(post("/boom")))
+        .hasRootCauseInstanceOf(IllegalStateException.class);
+
+    assertThat(output).contains("✗ POST /boom").doesNotContain("← ");
   }
 
   @Test
