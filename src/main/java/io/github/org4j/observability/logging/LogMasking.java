@@ -32,7 +32,7 @@ import org.springframework.boot.logging.structured.StructuredLoggingJsonMembersC
  */
 public final class LogMasking {
 
-  private static volatile Masking masking = Masking.defaults();
+  private static volatile Masking masking = Masking.empty();
 
   private LogMasking() {}
 

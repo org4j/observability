@@ -29,8 +29,7 @@ class LogMaskingTest {
   @AfterEach
   void resetLoggingMasking() {
     LogMasking.install(
-        (ch.qos.logback.classic.LoggerContext) LoggerFactory.getILoggerFactory(),
-        Masking.defaults());
+        (ch.qos.logback.classic.LoggerContext) LoggerFactory.getILoggerFactory(), Masking.empty());
   }
 
   private static void logInAnApp(String... arguments) {
